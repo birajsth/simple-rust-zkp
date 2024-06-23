@@ -6,7 +6,7 @@ This is a Rust implementation of the KZG commitment scheme. There are two main m
 
 
 ## Resources:
-[Feist-Khovratovich technique for computing KZG proofs fast](https://alinush.github.io/2021/06/17/Feist-Khovratovich-technique-for-computing-KZG-proofs-fast.html)
+[Alin Tomescu’s notes on KZG](https://alinush.github.io/2020/05/06/kzg-polynomial-commitments.html)
 
 [Dankrad Feist’s notes on KZG](https://dankradfeist.de/ethereum/2020/06/16/kate-polynomial-commitments.html)
 
