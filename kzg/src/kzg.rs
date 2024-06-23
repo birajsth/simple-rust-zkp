@@ -1,10 +1,11 @@
 use std::ops::Mul;
 use ark_ff::Field;
 use ark_ec::pairing::Pairing;
-use crate::utils::{div, evaluate};
+
+use crate::utils::{div, mul, evaluate, interpolate};
 
 
-pub(crate) struct KZG<E: Pairing> {
+pub struct KZG<E: Pairing> {
     pub g1: E::G1,
     pub g2: E::G2,
     pub g2_tau: E::G2,
@@ -65,6 +66,40 @@ impl <E: Pairing> KZG<E> {
 
         pi
     }
+
+    pub fn multi_open(&self, poly: &[E::ScalarField], points: &[E::ScalarField]) -> E::G1 {
+        // denominator is a polynomial where all its roots are the points to be evaluated (zero poly)
+        // Z(X) = (X - p1)(X - p2)...(X - pn)
+        let mut zero_poly = vec![-points[0], E::ScalarField::ONE];
+        for i in 1..points.len() {
+            zero_poly = mul(&zero_poly, &[-points[i], E::ScalarField::ONE]);
+        }
+
+        // perform Lagrange interpolation on points
+        let mut values = vec![];
+        for i in 0..points.len() {
+            values.push(evaluate(poly, points[i]));
+        }
+        let mut lagrange_poly = interpolate(points, &values).unwrap();
+        lagrange_poly.resize(poly.len(), E::ScalarField::ZERO); // pad with zeros
+
+        // numerator is the difference between the polynomial and the lagrange polynomial 
+        // P(X) - L(X)
+        let mut numerator = Vec::with_capacity(poly.len());
+        for (coeff1, coeff2) in poly.iter().zip(lagrange_poly.iter()) {     
+            numerator.push(*coeff1 - coeff2);
+        }
+        // get quotient by dividing numerator by denominator
+        let quotient = div(&numerator, &zero_poly).unwrap();
+
+        // calculate pi as proof (quotient multiplied by CRS)
+        let mut pi = self.g1.mul(E::ScalarField::ZERO);
+        for i in 0..quotient.len() {
+            pi += self.crs_g1[i] * quotient[i];
+        }
+
+        pi
+    }
     
     pub fn verify(
         &self, 
@@ -73,10 +108,41 @@ impl <E: Pairing> KZG<E> {
         commitment: E::G1,
         proof: E::G1
     ) -> bool {
-        let lhs = E::pairing(commitment - self.g1.mul(value), self.g2);
-        let rhs = E::pairing(proof, self.g2_tau - self.g2.mul(point));
+        let lhs = E::pairing(proof, self.g2_tau - self.g2.mul(point));
+        let rhs = E::pairing(commitment - self.g1.mul(value), self.g2);
         lhs == rhs
     }
+    
+    pub fn verify_multi(
+        &self, 
+        points: &[E::ScalarField],
+        values: &[E::ScalarField],
+        commitment: E::G1,
+        proof: E::G1
+    ) -> bool {
+        // compute teh zero polynomial
+        let mut zero_poly = vec![-points[0], E::ScalarField::ONE];
+        for i in 1..points.len() {
+            zero_poly = mul(&zero_poly, &[-points[i], E::ScalarField::ONE]);
+        }
+        // compute commitment of zero polynomial in regards to crs_g2
+        let mut zero_commitment = self.g2.mul(E::ScalarField::ZERO);
+        for i in 0..zero_poly.len() {
+            zero_commitment += self.crs_g2[i] * zero_poly[i];
+        }
 
+        // compute the lagrange polynomial
+        let lagrange_poly = interpolate(points, &values).unwrap();
+
+        // compute the commitment of the lagrange polynomial in regards to crs_g1
+        let mut lagrange_commitment = self.g1.mul(E::ScalarField::ZERO);
+        for i in 0..lagrange_poly.len() {
+            lagrange_commitment += self.crs_g1[i] * lagrange_poly[i];
+        }
+
+        let lhs = E::pairing(proof, zero_commitment);
+        let rhs = E::pairing(commitment- lagrange_commitment, self.g2);
+        lhs == rhs
+    }
 
 }

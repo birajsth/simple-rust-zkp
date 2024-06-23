@@ -69,3 +69,30 @@ pub fn evaluate<E:Field>(p: &[E], x: E) -> E {
     result
 }
 
+//helper function to perform Largrange interpolation given a set of points
+pub fn interpolate<E:Field>(points: &[E], values: &[E]) -> Result<Vec<E>, &'static str> {
+    assert!(points.len() == values.len(), "Number of points and values must be equal");
+
+    let mut result = vec![E::ZERO; points.len()];
+
+    for i in 0..points.len() {
+        let mut numerator = vec![E::ONE];
+        let mut denominator = E::ONE;
+
+        for j in 0..points.len() {
+            if i != j {
+                numerator = mul(&numerator, &[-points[j], E::ONE]);     
+                denominator *= points[i] - points[j];
+            }
+        }
+        let denominator_inv = denominator.inverse().unwrap();
+        let term: Vec<E> = numerator.iter().map(|&x| x * values[i] * denominator_inv).collect();
+        result = add(&result, &term);
+    }
+
+    Ok(result)
+}
+
+
+
+
