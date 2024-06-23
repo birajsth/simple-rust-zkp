@@ -3,7 +3,7 @@
 use std::ops::{Div, Mul};
 use ark_ff::Field;
 use ark_ec::pairing::Pairing;
-use crate::utils::{get_omega, mul, div, scalar_mul, interpolate};
+use crate::utils::{get_omega, mul, div, scalar_mul, interpolate, evaluate};
 
 #[derive(Clone)]
 pub struct CRS<E: Pairing> {
@@ -186,5 +186,32 @@ impl<E: Pairing> ASVC<E> {
         let rhs = E::pairing(commitment - remainder_commitment, self.verification_key.crs.g2[0]);
         lhs == rhs
     }
+
+    // aggregate multiple proofs into one subvector commitment
+    pub fn aggregate_proof(&self, indices: &[usize], proofs: Vec<E::G1>) -> E::G1 {
+        // make sure that length of indices  is the same as the proofs
+        assert_eq!(indices.len(), proofs.len());
+
+        // A(X) is product of i in indices (X - w^i)
+        let omega = get_omega(&vec![E::ScalarField::ZERO; proofs.len()]);
+        let mut a_polynomial = vec![-omega.pow([indices[0] as u64]), E::ScalarField::ONE];
+        for i in 1..indices.len() {
+            a_polynomial = mul(&a_polynomial, &[-omega.pow([i as u64]), E::ScalarField::ONE]);
+        }
+
+        // A'(X), derivative of A(X)
+        let mut a_derivative = vec![E::ScalarField::ZERO; a_polynomial.len() - 1];
+        for i in 1..a_polynomial.len() {
+            a_derivative[i-1] = a_polynomial[i] * E::ScalarField::from(i as u32);
+        }
+
+        let pi = indices.iter().enumerate().map(|(k, &i)|{
+            proofs[k].mul(evaluate(&a_derivative, omega.pow([i as u64])))
+        }).sum::<E::G1>();
+
+        pi
+    }
+    
+
 
 }

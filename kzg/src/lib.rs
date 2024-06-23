@@ -120,4 +120,52 @@ mod tests {
         println!("Vector evaluation verified");
 
     }
+
+    #[test]
+    fn test_proof_aggregation() {
+        let mut rng = ark_std::test_rng();
+        let degree = 16;
+
+        let secret = Fr::rand(&mut rng);
+
+        // initialize a ASVC instance
+        let asvc_instance = ASVC::<Bls12_381>::key_gen( 
+            G1::rand(&mut rng),
+            G2::rand(&mut rng),
+            degree,
+            secret
+        );
+
+        // generate a random vector and commit to it
+        let vector = vec![Fr::rand(&mut rng); degree];
+        let commitment = asvc_instance.vector_commit(&vector);
+
+        // randomly select three items in the vector and also record their indices
+        let mut selected_indices = Vec::new();
+        while selected_indices.len() < 3 {
+            let value = (0..=15).choose(&mut rng).unwrap();
+            if !selected_indices.contains(&value) {
+                selected_indices.push(value);
+            } 
+        }
+
+        // prove positions individually for these three selected indices
+        let pi_0 = asvc_instance.prove_position(&[selected_indices[0]], &vector);
+        let pi_1 = asvc_instance.prove_position(&[selected_indices[1]], &vector);
+        let pi_2 = asvc_instance.prove_position(&[selected_indices[2]], &vector);
+        let proofs = vec![pi_0, pi_1, pi_2];
+
+        // aggregate the proofs
+        let pi = asvc_instance.aggregate_proof(&selected_indices, proofs);
+
+        // verify the proof
+        let mut subvector = vec![];
+        for &index in &selected_indices {
+            subvector.push(vector[index]);
+        }
+        assert!(asvc_instance.verify_positon(commitment, &selected_indices, &subvector, pi));
+
+        println!("Vector evaluation verified");
+
+    }
 }
